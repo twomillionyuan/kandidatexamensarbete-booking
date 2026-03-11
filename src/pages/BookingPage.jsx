@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseConfigError } from '../lib/supabase';
 
 function formatTimeRange(start, end) {
   const startDate = new Date(start);
@@ -32,6 +32,12 @@ function BookingPage() {
   }, [availableSlots, selectedSlotId]);
 
   async function loadSlots() {
+    if (!supabase) {
+      setError(supabaseConfigError);
+      setSlots([]);
+      return;
+    }
+
     const { data, error: queryError } = await supabase
       .from('time_slots')
       .select('id,start_time,end_time,capacity,booked_count,is_active')
@@ -51,6 +57,13 @@ function BookingPage() {
     let mounted = true;
 
     async function initialLoad() {
+      if (!supabase) {
+        setError(supabaseConfigError);
+        setSlots([]);
+        setFetching(false);
+        return;
+      }
+
       const { data, error: queryError } = await supabase
         .from('time_slots')
         .select('id,start_time,end_time,capacity,booked_count,is_active')
@@ -77,6 +90,10 @@ function BookingPage() {
 
   async function handleBooking(event) {
     event.preventDefault();
+    if (!supabase) {
+      setError(supabaseConfigError);
+      return;
+    }
     setLoading(true);
     setMessage('');
     setError('');

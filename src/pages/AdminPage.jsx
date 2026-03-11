@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseConfigError } from '../lib/supabase';
 
 function formatDateTime(value) {
   return new Date(value).toLocaleString();
@@ -8,11 +8,11 @@ function formatDateTime(value) {
 function AdminPage() {
   const [session, setSession] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [authChecked, setAuthChecked] = useState(false);
+  const [authChecked, setAuthChecked] = useState(!supabase);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [authError, setAuthError] = useState('');
+  const [authError, setAuthError] = useState(!supabase ? supabaseConfigError : '');
 
   const [slots, setSlots] = useState([]);
   const [bookings, setBookings] = useState([]);
@@ -26,6 +26,12 @@ function AdminPage() {
   const [actionMessage, setActionMessage] = useState('');
 
   const loadAdminData = useCallback(async () => {
+    if (!supabase) {
+      setAuthError(supabaseConfigError);
+      setLoadingData(false);
+      return;
+    }
+
     setLoadingData(true);
 
     const [{ data: slotData, error: slotError }, { data: bookingData, error: bookingError }] =
@@ -57,6 +63,14 @@ function AdminPage() {
 
   const checkAdminAccess = useCallback(
     async (currentSession) => {
+      if (!supabase) {
+        setSession(null);
+        setIsAdmin(false);
+        setAuthError(supabaseConfigError);
+        setAuthChecked(true);
+        return;
+      }
+
       if (!currentSession?.user?.id) {
         setSession(null);
         setIsAdmin(false);
@@ -88,6 +102,8 @@ function AdminPage() {
   );
 
   useEffect(() => {
+    if (!supabase) return undefined;
+
     let mounted = true;
 
     async function bootstrap() {
@@ -112,6 +128,10 @@ function AdminPage() {
 
   async function handleLogin(event) {
     event.preventDefault();
+    if (!supabase) {
+      setAuthError(supabaseConfigError);
+      return;
+    }
     setAuthError('');
 
     const { error } = await supabase.auth.signInWithPassword({
@@ -129,6 +149,7 @@ function AdminPage() {
   }
 
   async function handleLogout() {
+    if (!supabase) return;
     await supabase.auth.signOut();
     setIsAdmin(false);
     setSession(null);
@@ -136,6 +157,10 @@ function AdminPage() {
 
   async function handleCreateSlot(event) {
     event.preventDefault();
+    if (!supabase) {
+      setAuthError(supabaseConfigError);
+      return;
+    }
     setSavingSlot(true);
     setActionMessage('');
     setAuthError('');
@@ -163,6 +188,10 @@ function AdminPage() {
   }
 
   async function handleDeactivateSlot(slotId) {
+    if (!supabase) {
+      setAuthError(supabaseConfigError);
+      return;
+    }
     setActionMessage('');
     setAuthError('');
 
