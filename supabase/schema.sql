@@ -21,6 +21,7 @@ create table if not exists public.bookings (
   constraint unique_booking_per_email_per_slot unique (slot_id, email)
 );
 
+-- Legacy table kept for compatibility with previous versions of this project.
 create table if not exists public.admin_users (
   user_id uuid primary key references auth.users (id) on delete cascade,
   created_at timestamptz not null default now()
@@ -97,82 +98,50 @@ grant select on public.time_slots to anon, authenticated;
 grant insert on public.bookings to anon, authenticated;
 grant select, insert, update on public.time_slots to authenticated;
 grant select, delete on public.bookings to authenticated;
-grant select on public.admin_users to authenticated;
 
 drop policy if exists "public can read active slots" on public.time_slots;
+drop policy if exists "admin can read all slots" on public.time_slots;
+drop policy if exists "admin can edit slots" on public.time_slots;
+drop policy if exists "authenticated can read all slots" on public.time_slots;
+drop policy if exists "authenticated can edit slots" on public.time_slots;
+
 create policy "public can read active slots"
 on public.time_slots
 for select
 using (is_active = true);
 
-drop policy if exists "admin can read all slots" on public.time_slots;
-create policy "admin can read all slots"
+create policy "authenticated can read all slots"
 on public.time_slots
 for select
 to authenticated
-using (
-  exists (
-    select 1
-    from public.admin_users
-    where user_id = auth.uid()
-  )
-);
+using (true);
 
-drop policy if exists "admin can edit slots" on public.time_slots;
-create policy "admin can edit slots"
+create policy "authenticated can edit slots"
 on public.time_slots
 for all
 to authenticated
-using (
-  exists (
-    select 1
-    from public.admin_users
-    where user_id = auth.uid()
-  )
-)
-with check (
-  exists (
-    select 1
-    from public.admin_users
-    where user_id = auth.uid()
-  )
-);
+using (true)
+with check (true);
 
 drop policy if exists "anyone can create booking" on public.bookings;
+drop policy if exists "admin can read bookings" on public.bookings;
+drop policy if exists "admin can delete bookings" on public.bookings;
+drop policy if exists "authenticated can read bookings" on public.bookings;
+drop policy if exists "authenticated can delete bookings" on public.bookings;
+
 create policy "anyone can create booking"
 on public.bookings
 for insert
 with check (true);
 
-drop policy if exists "admin can read bookings" on public.bookings;
-create policy "admin can read bookings"
+create policy "authenticated can read bookings"
 on public.bookings
 for select
 to authenticated
-using (
-  exists (
-    select 1
-    from public.admin_users
-    where user_id = auth.uid()
-  )
-);
+using (true);
 
-drop policy if exists "admin can delete bookings" on public.bookings;
-create policy "admin can delete bookings"
+create policy "authenticated can delete bookings"
 on public.bookings
 for delete
 to authenticated
-using (
-  exists (
-    select 1
-    from public.admin_users
-    where user_id = auth.uid()
-  )
-);
-
-drop policy if exists "admins can read own admin mapping" on public.admin_users;
-create policy "admins can read own admin mapping"
-on public.admin_users
-for select
-to authenticated
-using (auth.uid() = user_id);
+using (true);

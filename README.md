@@ -2,7 +2,7 @@
 
 Pink/cute booking website with:
 - Public **Booking** page (name + email + time selection)
-- Password-protected **Admin** page (email/password login)
+- Password-only **Admin** page
 - Slot capacity support (you choose how many people can book each slot)
 - Supabase database (Postgres + Auth)
 - GitHub Pages deployment from GitHub Actions
@@ -14,48 +14,42 @@ npm install
 cp .env.example .env
 ```
 
-Fill `.env` with your Supabase project values:
+Fill `.env`:
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
+- Optional: `VITE_ADMIN_EMAIL` (default is `admin@kandidatexamensarbete.local`)
 
-Start locally:
+Run locally:
 
 ```bash
 npm run dev
 ```
 
-## 2. Supabase database setup
+## 2. Supabase setup
 
-1. Create a new Supabase project.
-2. Open SQL Editor and run [`supabase/schema.sql`](/Users/ebbalanyuan/kandidatexamensarbete-booking/supabase/schema.sql).
-3. In Supabase Auth, create two users (you and Vanessa) with email + password.
-4. Add those users as admins:
+1. Create a Supabase project.
+2. In SQL Editor, run [`supabase/schema.sql`](/Users/ebbalanyuan/kandidatexamensarbete-booking/supabase/schema.sql).
+3. In Auth -> Users, create **one admin user**:
+   - Email: `admin@kandidatexamensarbete.local` (or your `VITE_ADMIN_EMAIL` value)
+   - Password: `admin`
 
-```sql
-insert into public.admin_users (user_id)
-values
-  ('YOUR_USER_UUID_1'),
-  ('YOUR_USER_UUID_2');
-```
+After this, the Admin page login requires only the password field (`admin`).
 
-How to get user UUIDs:
-- Supabase Dashboard -> Authentication -> Users -> copy each user `id`
+## 3. GitHub Pages deploy
 
-## 3. GitHub deployment (Pages)
-
-1. Create a new GitHub repository.
-2. Push this project to `main`.
-3. In GitHub repo settings, add Actions secrets:
+1. Push repo to GitHub `main`.
+2. Add repo secrets:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
-4. In **Settings -> Pages**, set source to **GitHub Actions**.
-5. Push to `main` and wait for workflow `Deploy to GitHub Pages` to finish.
+   - Optional `VITE_ADMIN_EMAIL`
+3. In Settings -> Pages, source = **GitHub Actions**.
+4. Trigger deploy workflow.
 
-Your site URL will be:
+Site URL:
 - `https://<your-github-username>.github.io/<repo-name>/`
 
 ## Notes
 
-- Booking users only submit name + email; they do not need accounts.
-- Admin login is only for users added in `admin_users`.
-- Capacity is enforced in the database, so overbooking is blocked.
+- Booking users do not need accounts.
+- Capacity is enforced in the database so overbooking is blocked.
+- `admin` is intentionally weak and only suitable for demos; change it for real use.

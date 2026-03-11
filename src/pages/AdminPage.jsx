@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase, supabaseConfigError } from '../lib/supabase';
 
+const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || 'admin@kandidatexamensarbete.local';
+
 function formatDateTime(value) {
   return new Date(value).toLocaleString();
 }
 
 function AdminPage() {
   const [session, setSession] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [authChecked, setAuthChecked] = useState(!supabase);
 
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState(!supabase ? supabaseConfigError : '');
 
@@ -28,11 +28,11 @@ function AdminPage() {
   const loadAdminData = useCallback(async () => {
     if (!supabase) {
       setAuthError(supabaseConfigError);
-      setLoadingData(false);
       return;
     }
 
     setLoadingData(true);
+    setAuthError('');
 
     const [{ data: slotData, error: slotError }, { data: bookingData, error: bookingError }] =
       await Promise.all([
@@ -46,70 +46,35 @@ function AdminPage() {
           .order('created_at', { ascending: false }),
       ]);
 
-    if (slotError) {
-      setAuthError(slotError.message);
+    if (slotError || bookingError) {
+      setAuthError(slotError?.message ?? bookingError?.message ?? 'Failed to load admin data.');
     } else {
       setSlots(slotData ?? []);
-    }
-
-    if (bookingError) {
-      setAuthError(bookingError.message);
-    } else {
       setBookings(bookingData ?? []);
     }
 
     setLoadingData(false);
   }, []);
 
-  const checkAdminAccess = useCallback(
-    async (currentSession) => {
-      if (!supabase) {
-        setSession(null);
-        setIsAdmin(false);
-        setAuthError(supabaseConfigError);
-        setAuthChecked(true);
-        return;
-      }
-
-      if (!currentSession?.user?.id) {
-        setSession(null);
-        setIsAdmin(false);
-        setAuthChecked(true);
-        return;
-      }
-
-      setSession(currentSession);
-
-      const { data, error } = await supabase
-        .from('admin_users')
-        .select('user_id')
-        .eq('user_id', currentSession.user.id)
-        .maybeSingle();
-
-      if (error || !data) {
-        setIsAdmin(false);
-        setLoadingData(false);
-        setAuthError('This account is not allowed to access admin.');
-      } else {
-        setIsAdmin(true);
-        setAuthError('');
-        await loadAdminData();
-      }
-
-      setAuthChecked(true);
-    },
-    [loadAdminData],
-  );
-
   useEffect(() => {
     if (!supabase) return undefined;
 
-    let mounted = true;
+    let active = true;
 
     async function bootstrap() {
-      const { data } = await supabase.auth.getSession();
-      if (!mounted) return;
-      await checkAdminAccess(data.session);
+      const { data, error } = await supabase.auth.getSession();
+      if (!active) return;
+
+      if (error) {
+        setAuthError(error.message);
+      }
+
+      setSession(data.session ?? null);
+      setAuthChecked(true);
+
+      if (data.session) {
+        await loadAdminData();
+      }
     }
 
     bootstrap();
@@ -117,50 +82,64 @@ function AdminPage() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
-      await checkAdminAccess(currentSession);
+      if (!active) return;
+
+      setSession(currentSession);
+
+      if (currentSession) {
+        await loadAdminData();
+      } else {
+        setSlots([]);
+        setBookings([]);
+      }
+
+      setAuthChecked(true);
     });
 
     return () => {
-      mounted = false;
+      active = false;
       subscription.unsubscribe();
     };
-  }, [checkAdminAccess]);
+  }, [loadAdminData]);
 
   async function handleLogin(event) {
     event.preventDefault();
+
     if (!supabase) {
       setAuthError(supabaseConfigError);
       return;
     }
+
     setAuthError('');
 
     const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
+      email: ADMIN_EMAIL,
+      password: password.trim(),
     });
 
     if (error) {
-      setAuthError(error.message);
+      setAuthError('Wrong password.');
       return;
     }
 
-    setEmail('');
     setPassword('');
   }
 
   async function handleLogout() {
     if (!supabase) return;
+
     await supabase.auth.signOut();
-    setIsAdmin(false);
     setSession(null);
   }
 
   async function handleCreateSlot(event) {
     event.preventDefault();
+
     if (!supabase) {
       setAuthError(supabaseConfigError);
       return;
     }
+
     setSavingSlot(true);
     setActionMessage('');
     setAuthError('');
@@ -192,13 +171,11 @@ function AdminPage() {
       setAuthError(supabaseConfigError);
       return;
     }
+
     setActionMessage('');
     setAuthError('');
 
-    const { error } = await supabase
-      .from('time_slots')
-      .update({ is_active: false })
-      .eq('id', slotId);
+    const { error } = await supabase.from('time_slots').update({ is_active: false }).eq('id', slotId);
 
     if (error) {
       setAuthError(error.message);
@@ -218,22 +195,13 @@ function AdminPage() {
     );
   }
 
-  if (!session || !isAdmin) {
+  if (!session) {
     return (
       <section className="card">
         <h2>Admin login</h2>
-        <p className="lead">Sign in with your password to manage slots and view bookings.</p>
+        <p className="lead">Enter the admin password to manage slots and view bookings.</p>
 
         <form className="booking-form" onSubmit={handleLogin}>
-          <label>
-            Email
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-          </label>
           <label>
             Password
             <input
@@ -241,6 +209,7 @@ function AdminPage() {
               required
               value={password}
               onChange={(event) => setPassword(event.target.value)}
+              placeholder="Enter admin password"
             />
           </label>
           <button type="submit">Sign in</button>
