@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   couchConfigError,
   createSlot,
+  createSlotsFromRange,
   fetchAllSlots,
   fetchBookings,
   hideSlot,
@@ -25,9 +26,14 @@ function AdminPage() {
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [capacity, setCapacity] = useState(1);
+  const [rangeStart, setRangeStart] = useState('');
+  const [rangeEnd, setRangeEnd] = useState('');
+  const [slotLengthMinutes, setSlotLengthMinutes] = useState(30);
+  const [rangeCapacity, setRangeCapacity] = useState(1);
 
   const [loadingData, setLoadingData] = useState(false);
   const [savingSlot, setSavingSlot] = useState(false);
+  const [generatingSlots, setGeneratingSlots] = useState(false);
   const [actionMessage, setActionMessage] = useState('');
 
   const slotMap = useMemo(() => {
@@ -120,6 +126,28 @@ function AdminPage() {
     }
   }
 
+  async function handleGenerateSlots(event) {
+    event.preventDefault();
+    setGeneratingSlots(true);
+    setActionMessage('');
+    setAuthError('');
+
+    try {
+      const createdCount = await createSlotsFromRange({
+        rangeStart,
+        rangeEnd,
+        slotLengthMinutes,
+        capacity: rangeCapacity,
+      });
+      setActionMessage(`Created ${createdCount} slot(s).`);
+      await loadAdminData();
+    } catch (error) {
+      setAuthError(error.message || 'Could not generate slots.');
+    }
+
+    setGeneratingSlots(false);
+  }
+
   if (!isAdmin) {
     return (
       <section className="card">
@@ -154,7 +182,7 @@ function AdminPage() {
         </button>
       </div>
 
-      <p className="lead">Create time slots, set capacity, and view everyone who booked.</p>
+      <p className="lead">Create time slots, generate many at once, and view everyone who booked.</p>
 
       <form className="slot-form" onSubmit={handleCreateSlot}>
         <label>
@@ -188,6 +216,56 @@ function AdminPage() {
         </label>
         <button type="submit" disabled={savingSlot}>
           {savingSlot ? 'Saving...' : 'Create slot'}
+        </button>
+      </form>
+
+      <h3>Auto-generate slots</h3>
+      <p className="lead form-note">
+        Pick a timeframe and slot length. The app creates all full slots that fit inside it.
+      </p>
+      <form className="slot-form" onSubmit={handleGenerateSlots}>
+        <label>
+          Range start
+          <input
+            type="datetime-local"
+            required
+            value={rangeStart}
+            onChange={(event) => setRangeStart(event.target.value)}
+          />
+        </label>
+        <label>
+          Range end
+          <input
+            type="datetime-local"
+            required
+            value={rangeEnd}
+            onChange={(event) => setRangeEnd(event.target.value)}
+          />
+        </label>
+        <label>
+          Slot length (minutes)
+          <input
+            type="number"
+            min="1"
+            max="240"
+            required
+            value={slotLengthMinutes}
+            onChange={(event) => setSlotLengthMinutes(Number(event.target.value))}
+          />
+        </label>
+        <label>
+          Capacity per slot
+          <input
+            type="number"
+            min="1"
+            max="20"
+            required
+            value={rangeCapacity}
+            onChange={(event) => setRangeCapacity(Number(event.target.value))}
+          />
+        </label>
+        <button type="submit" disabled={generatingSlots}>
+          {generatingSlots ? 'Generating...' : 'Generate slots'}
         </button>
       </form>
 

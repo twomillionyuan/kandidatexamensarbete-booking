@@ -78,6 +78,22 @@ function emailKey(email) {
   return email.toLowerCase().replace(/[^a-z0-9]/gi, '_');
 }
 
+function parseIsoDate(value, fieldName) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Invalid ${fieldName}`);
+  }
+  return date;
+}
+
+function normalizeCapacity(capacity) {
+  const parsed = Number(capacity);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error('Capacity must be at least 1');
+  }
+  return parsed;
+}
+
 async function getDoc(id) {
   return couchRequest(`/${encodeURIComponent(id)}`);
 }
@@ -155,18 +171,77 @@ export async function fetchBookings() {
 }
 
 export async function createSlot({ startTime, endTime, capacity }) {
+  const startDate = parseIsoDate(startTime, 'start time');
+  const endDate = parseIsoDate(endTime, 'end time');
+  const normalizedCapacity = normalizeCapacity(capacity);
+
+  if (endDate <= startDate) {
+    throw new Error('End time must be after start time');
+  }
+
   const slotDoc = {
     _id: `slot:${randomId()}`,
     type: 'slot',
-    start_time: new Date(startTime).toISOString(),
-    end_time: new Date(endTime).toISOString(),
-    capacity: Number(capacity),
+    start_time: startDate.toISOString(),
+    end_time: endDate.toISOString(),
+    capacity: normalizedCapacity,
     booked_count: 0,
     is_active: true,
     created_at: new Date().toISOString(),
   };
 
   await putDoc(slotDoc);
+}
+
+export async function createSlotsFromRange({ rangeStart, rangeEnd, slotLengthMinutes, capacity }) {
+  const startDate = parseIsoDate(rangeStart, 'range start');
+  const endDate = parseIsoDate(rangeEnd, 'range end');
+  const normalizedCapacity = normalizeCapacity(capacity);
+
+  const slotMinutes = Number(slotLengthMinutes);
+  if (!Number.isInteger(slotMinutes) || slotMinutes < 1) {
+    throw new Error('Slot length must be at least 1 minute');
+  }
+
+  if (endDate <= startDate) {
+    throw new Error('Range end must be after range start');
+  }
+
+  const slotLengthMs = slotMinutes * 60 * 1000;
+  const availableMs = endDate.getTime() - startDate.getTime();
+  const slotCount = Math.floor(availableMs / slotLengthMs);
+
+  if (slotCount < 1) {
+    throw new Error('No slots fit in this time range with that slot length');
+  }
+
+  const docs = Array.from({ length: slotCount }, (_value, index) => {
+    const slotStart = new Date(startDate.getTime() + index * slotLengthMs);
+    const slotEnd = new Date(slotStart.getTime() + slotLengthMs);
+
+    return {
+      _id: `slot:${randomId()}`,
+      type: 'slot',
+      start_time: slotStart.toISOString(),
+      end_time: slotEnd.toISOString(),
+      capacity: normalizedCapacity,
+      booked_count: 0,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    };
+  });
+
+  const result = await couchRequest('/_bulk_docs', {
+    method: 'POST',
+    body: JSON.stringify({ docs }),
+  });
+
+  const failed = (result ?? []).find((entry) => entry.error);
+  if (failed) {
+    throw new Error(failed.reason || failed.error || 'Failed to create generated slots');
+  }
+
+  return slotCount;
 }
 
 export async function hideSlot(slotId) {
