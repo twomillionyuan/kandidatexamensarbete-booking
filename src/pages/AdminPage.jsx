@@ -7,13 +7,10 @@ import {
   fetchBookings,
   hideSlot,
 } from '../lib/couchdb';
+import { formatDateTimeLabel, formatSlotLabel } from '../lib/dateFormat';
 
 const ADMIN_PASSWORD = 'admin';
 const ADMIN_FLAG = 'kandidatexamensarbete_admin_unlocked';
-
-function formatDateTime(value) {
-  return new Date(value).toLocaleString();
-}
 
 function AdminPage() {
   const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem(ADMIN_FLAG) === '1');
@@ -291,7 +288,7 @@ function AdminPage() {
               <tbody>
                 {slots.map((slot) => (
                   <tr key={slot._id}>
-                    <td>{`${formatDateTime(slot.start_time)} - ${formatDateTime(slot.end_time)}`}</td>
+                    <td>{formatSlotLabel(slot.start_time, slot.end_time)}</td>
                     <td>{slot.booked_count}</td>
                     <td>{slot.capacity}</td>
                     <td>{slot.is_active ? 'Visible' : 'Hidden'}</td>
@@ -335,10 +332,10 @@ function AdminPage() {
                       <td>{booking.email}</td>
                       <td>
                         {slot
-                          ? `${formatDateTime(slot.start_time)} - ${formatDateTime(slot.end_time)}`
+                          ? formatSlotLabel(slot.start_time, slot.end_time)
                           : 'Slot missing'}
                       </td>
-                      <td>{formatDateTime(booking.created_at)}</td>
+                      <td>{formatDateTimeLabel(booking.created_at)}</td>
                     </tr>
                   );
                 })}

@@ -1,14 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { couchConfigError, createBooking, fetchActiveSlots } from '../lib/couchdb';
-
-function formatTimeRange(start, end) {
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-  return `${startDate.toLocaleString()} - ${endDate.toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  })}`;
-}
+import { formatSlotLabel } from '../lib/dateFormat';
 
 function BookingPage() {
   const [slots, setSlots] = useState([]);
@@ -121,7 +113,7 @@ function BookingPage() {
                   className={`slot-chip ${effectiveSelectedSlotId === slot._id ? 'active' : ''}`}
                   onClick={() => setSelectedSlotId(slot._id)}
                 >
-                  <span>{formatTimeRange(slot.start_time, slot.end_time)}</span>
+                  <span>{formatSlotLabel(slot.start_time, slot.end_time)}</span>
                   <strong>{remaining} spot(s) left</strong>
                 </button>
               );
