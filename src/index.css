@@ -218,6 +218,20 @@ button.secondary {
   align-items: center;
 }
 
+.action-row {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.inline-edit-form {
+  margin-top: 0.8rem;
+  padding: 0.8rem;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  background: #fff5fb;
+}
+
 .table-wrap {
   overflow: auto;
   border: 1px solid var(--line);

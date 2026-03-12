@@ -27,6 +27,10 @@ function isConflictError(error) {
   return String(error?.message ?? '').toLowerCase().includes('conflict');
 }
 
+function isMissingError(error) {
+  return String(error?.message ?? '').toLowerCase().includes('missing');
+}
+
 async function couchRequest(path = '', options = {}) {
   if (!hasConfig) {
     throw new Error(couchConfigError);
@@ -263,6 +267,70 @@ export async function hideSlot(slotId) {
   }
 
   throw new Error('Could not update slot. Please try again.');
+}
+
+export async function updateSlotTimes({ slotId, startTime, endTime }) {
+  const startDate = parseIsoDate(startTime, 'start time');
+  const endDate = parseIsoDate(endTime, 'end time');
+
+  if (endDate <= startDate) {
+    throw new Error('End time must be after start time');
+  }
+
+  for (let attempts = 0; attempts < 4; attempts += 1) {
+    const slotDoc = await getDoc(slotId);
+
+    try {
+      await putDoc({
+        ...slotDoc,
+        start_time: startDate.toISOString(),
+        end_time: endDate.toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      return;
+    } catch (error) {
+      if (!isConflictError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error('Could not update slot times. Please try again.');
+}
+
+export async function removeBooking(bookingId) {
+  for (let attempts = 0; attempts < 4; attempts += 1) {
+    let bookingDoc;
+    try {
+      bookingDoc = await getDoc(bookingId);
+    } catch (error) {
+      if (isMissingError(error)) {
+        throw new Error('Booking was already removed.');
+      }
+      throw error;
+    }
+
+    try {
+      await couchRequest(`/${encodeURIComponent(bookingId)}?rev=${encodeURIComponent(bookingDoc._rev)}`, {
+        method: 'DELETE',
+      });
+
+      try {
+        await decrementSlotCount(bookingDoc.slot_id);
+      } catch (error) {
+        if (!isMissingError(error)) {
+          throw error;
+        }
+      }
+      return;
+    } catch (error) {
+      if (!isConflictError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error('Could not remove booking. Please try again.');
 }
 
 export async function createBooking({ slotId, name, email }) {

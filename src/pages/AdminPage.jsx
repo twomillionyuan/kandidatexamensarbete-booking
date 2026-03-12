@@ -6,11 +6,21 @@ import {
   fetchAllSlots,
   fetchBookings,
   hideSlot,
+  removeBooking,
+  updateSlotTimes,
 } from '../lib/couchdb';
 import { formatDateTimeLabel, formatSlotLabel } from '../lib/dateFormat';
 
 const ADMIN_PASSWORD = 'admin';
 const ADMIN_FLAG = 'kandidatexamensarbete_admin_unlocked';
+
+function toDatetimeLocalValue(isoValue) {
+  const date = new Date(isoValue);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return localDate.toISOString().slice(0, 16);
+}
 
 function AdminPage() {
   const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem(ADMIN_FLAG) === '1');
@@ -27,10 +37,15 @@ function AdminPage() {
   const [rangeEnd, setRangeEnd] = useState('');
   const [slotLengthMinutes, setSlotLengthMinutes] = useState(30);
   const [rangeCapacity, setRangeCapacity] = useState(1);
+  const [editingSlotId, setEditingSlotId] = useState('');
+  const [editStartTime, setEditStartTime] = useState('');
+  const [editEndTime, setEditEndTime] = useState('');
 
   const [loadingData, setLoadingData] = useState(false);
   const [savingSlot, setSavingSlot] = useState(false);
   const [generatingSlots, setGeneratingSlots] = useState(false);
+  const [savingSlotEdit, setSavingSlotEdit] = useState(false);
+  const [removingBookingId, setRemovingBookingId] = useState('');
   const [actionMessage, setActionMessage] = useState('');
 
   const slotMap = useMemo(() => {
@@ -121,6 +136,63 @@ function AdminPage() {
     } catch (error) {
       setAuthError(error.message || 'Could not hide slot.');
     }
+  }
+
+  function handleStartEditSlot(slot) {
+    setEditingSlotId(slot._id);
+    setEditStartTime(toDatetimeLocalValue(slot.start_time));
+    setEditEndTime(toDatetimeLocalValue(slot.end_time));
+    setActionMessage('');
+    setAuthError('');
+  }
+
+  function handleCancelEditSlot() {
+    setEditingSlotId('');
+    setEditStartTime('');
+    setEditEndTime('');
+  }
+
+  async function handleSaveSlotEdit(event) {
+    event.preventDefault();
+    if (!editingSlotId) return;
+
+    setSavingSlotEdit(true);
+    setActionMessage('');
+    setAuthError('');
+
+    try {
+      await updateSlotTimes({
+        slotId: editingSlotId,
+        startTime: editStartTime,
+        endTime: editEndTime,
+      });
+      setActionMessage('Slot time updated.');
+      handleCancelEditSlot();
+      await loadAdminData();
+    } catch (error) {
+      setAuthError(error.message || 'Could not update slot.');
+    }
+
+    setSavingSlotEdit(false);
+  }
+
+  async function handleRemoveBooking(booking) {
+    const shouldRemove = window.confirm(`Remove booking for ${booking.name}?`);
+    if (!shouldRemove) return;
+
+    setRemovingBookingId(booking._id);
+    setActionMessage('');
+    setAuthError('');
+
+    try {
+      await removeBooking(booking._id);
+      setActionMessage('Booking removed.');
+      await loadAdminData();
+    } catch (error) {
+      setAuthError(error.message || 'Could not remove booking.');
+    }
+
+    setRemovingBookingId('');
   }
 
   async function handleGenerateSlots(event) {
@@ -293,23 +365,61 @@ function AdminPage() {
                     <td>{slot.capacity}</td>
                     <td>{slot.is_active ? 'Visible' : 'Hidden'}</td>
                     <td>
-                      {slot.is_active ? (
+                      <div className="action-row">
                         <button
                           type="button"
                           className="secondary"
-                          onClick={() => handleDeactivateSlot(slot._id)}
+                          onClick={() => handleStartEditSlot(slot)}
                         >
-                          Hide
+                          Edit time
                         </button>
-                      ) : (
-                        '—'
-                      )}
+                        {slot.is_active ? (
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => handleDeactivateSlot(slot._id)}
+                          >
+                            Hide
+                          </button>
+                        ) : (
+                          <span>—</span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+
+          {editingSlotId && (
+            <form className="slot-form inline-edit-form" onSubmit={handleSaveSlotEdit}>
+              <label>
+                New start time
+                <input
+                  type="datetime-local"
+                  required
+                  value={editStartTime}
+                  onChange={(event) => setEditStartTime(event.target.value)}
+                />
+              </label>
+              <label>
+                New end time
+                <input
+                  type="datetime-local"
+                  required
+                  value={editEndTime}
+                  onChange={(event) => setEditEndTime(event.target.value)}
+                />
+              </label>
+              <button type="submit" disabled={savingSlotEdit}>
+                {savingSlotEdit ? 'Saving...' : 'Save time change'}
+              </button>
+              <button type="button" className="secondary" onClick={handleCancelEditSlot}>
+                Cancel
+              </button>
+            </form>
+          )}
 
           <h3>Bookings</h3>
           <div className="table-wrap">
@@ -320,6 +430,7 @@ function AdminPage() {
                   <th>Email</th>
                   <th>Slot</th>
                   <th>Booked at</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -336,6 +447,16 @@ function AdminPage() {
                           : 'Slot missing'}
                       </td>
                       <td>{formatDateTimeLabel(booking.created_at)}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={removingBookingId === booking._id}
+                          onClick={() => handleRemoveBooking(booking)}
+                        >
+                          {removingBookingId === booking._id ? 'Removing...' : 'Remove'}
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
