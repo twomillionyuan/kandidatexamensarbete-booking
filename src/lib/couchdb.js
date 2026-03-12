@@ -54,34 +54,9 @@ async function couchRequest(path = '', options = {}) {
   return payload;
 }
 
-let indexesPromise = null;
-
 async function ensureIndexes() {
-  if (indexesPromise) return indexesPromise;
-
-  indexesPromise = Promise.all([
-    couchRequest('/_index', {
-      method: 'POST',
-      body: JSON.stringify({
-        index: { fields: ['type', 'is_active', 'start_time'] },
-        name: 'idx_type_active_start',
-        type: 'json',
-      }),
-    }),
-    couchRequest('/_index', {
-      method: 'POST',
-      body: JSON.stringify({
-        index: { fields: ['type', 'created_at'] },
-        name: 'idx_type_created_at',
-        type: 'json',
-      }),
-    }),
-  ]).catch((error) => {
-    indexesPromise = null;
-    throw error;
-  });
-
-  return indexesPromise;
+  // Indexes are managed server-side on CouchDB; clients should not create design docs.
+  return Promise.resolve();
 }
 
 function sortByStart(a, b) {
