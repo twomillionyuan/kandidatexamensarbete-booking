@@ -2,54 +2,49 @@
 
 Pink/cute booking website with:
 - Public **Booking** page (name + email + time selection)
-- Password-only **Admin** page
-- Slot capacity support (you choose how many people can book each slot)
-- Supabase database (Postgres + Auth)
+- Password-only **Admin** page (`admin`)
+- Slot capacity support
+- CouchDB on OSAAS as database
 - GitHub Pages deployment from GitHub Actions
+
+## Current CouchDB target
+
+This app is configured to use your existing OSAAS instance by default:
+- URL: `https://ebba-pageturnercouch.apache-couchdb.auto.prod.osaas.io`
+- Database: `kandidatebooking`
+
+No Supabase is used anymore.
 
 ## 1. Local setup
 
 ```bash
 npm install
 cp .env.example .env
-```
-
-Fill `.env`:
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
-- Optional: `VITE_ADMIN_EMAIL` (default is `admin@kandidatexamensarbete.local`)
-
-Run locally:
-
-```bash
 npm run dev
 ```
 
-## 2. Supabase setup
+Optional environment overrides in `.env`:
+- `VITE_COUCHDB_URL`
+- `VITE_COUCHDB_DB`
 
-1. Create a Supabase project.
-2. In SQL Editor, run [`supabase/schema.sql`](/Users/ebbalanyuan/kandidatexamensarbete-booking/supabase/schema.sql).
-3. In Auth -> Users, create **one admin user**:
-   - Email: `admin@kandidatexamensarbete.local` (or your `VITE_ADMIN_EMAIL` value)
-   - Password: `admin`
+## 2. OSAAS CouchDB setup
 
-After this, the Admin page login requires only the password field (`admin`).
+Already configured by me on your instance:
+- Database `kandidatebooking` created
+- DB security opened for browser access
+- CORS enabled for GitHub Pages/browser requests
 
-## 3. GitHub Pages deploy
+If you ever need to recreate this, update [couchdb.js](/Users/ebbalanyuan/kandidatexamensarbete-booking/src/lib/couchdb.js) defaults or set env vars.
 
-1. Push repo to GitHub `main`.
-2. Add repo secrets:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
-   - Optional `VITE_ADMIN_EMAIL`
-3. In Settings -> Pages, source = **GitHub Actions**.
-4. Trigger deploy workflow.
+## 3. Admin login
+
+- Admin page uses one local password: `admin`
+- This is intentionally simple and suitable for project/demo use
+
+## 4. GitHub deploy
+
+1. Push to `main`
+2. GitHub Action deploys automatically to Pages
 
 Site URL:
-- `https://<your-github-username>.github.io/<repo-name>/`
-
-## Notes
-
-- Booking users do not need accounts.
-- Capacity is enforced in the database so overbooking is blocked.
-- `admin` is intentionally weak and only suitable for demos; change it for real use.
+- `https://twomillionyuan.github.io/kandidatexamensarbete-booking/`

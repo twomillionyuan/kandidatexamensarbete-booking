@@ -1,18 +1,23 @@
-import { useCallback, useEffect, useState } from 'react';
-import { supabase, supabaseConfigError } from '../lib/supabase';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  couchConfigError,
+  createSlot,
+  fetchAllSlots,
+  fetchBookings,
+  hideSlot,
+} from '../lib/couchdb';
 
-const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || 'admin@kandidatexamensarbete.local';
+const ADMIN_PASSWORD = 'admin';
+const ADMIN_FLAG = 'kandidatexamensarbete_admin_unlocked';
 
 function formatDateTime(value) {
   return new Date(value).toLocaleString();
 }
 
 function AdminPage() {
-  const [session, setSession] = useState(null);
-  const [authChecked, setAuthChecked] = useState(!supabase);
-
+  const [isAdmin, setIsAdmin] = useState(() => localStorage.getItem(ADMIN_FLAG) === '1');
   const [password, setPassword] = useState('');
-  const [authError, setAuthError] = useState(!supabase ? supabaseConfigError : '');
+  const [authError, setAuthError] = useState('');
 
   const [slots, setSlots] = useState([]);
   const [bookings, setBookings] = useState([]);
@@ -25,177 +30,97 @@ function AdminPage() {
   const [savingSlot, setSavingSlot] = useState(false);
   const [actionMessage, setActionMessage] = useState('');
 
+  const slotMap = useMemo(() => {
+    const map = new Map();
+    slots.forEach((slot) => map.set(slot._id, slot));
+    return map;
+  }, [slots]);
+
   const loadAdminData = useCallback(async () => {
-    if (!supabase) {
-      setAuthError(supabaseConfigError);
-      return;
-    }
-
     setLoadingData(true);
-    setAuthError('');
 
-    const [{ data: slotData, error: slotError }, { data: bookingData, error: bookingError }] =
-      await Promise.all([
-        supabase
-          .from('time_slots')
-          .select('id,start_time,end_time,capacity,booked_count,is_active')
-          .order('start_time', { ascending: true }),
-        supabase
-          .from('bookings')
-          .select('id,name,email,created_at,slot:time_slots(start_time,end_time)')
-          .order('created_at', { ascending: false }),
-      ]);
-
-    if (slotError || bookingError) {
-      setAuthError(slotError?.message ?? bookingError?.message ?? 'Failed to load admin data.');
-    } else {
-      setSlots(slotData ?? []);
-      setBookings(bookingData ?? []);
+    try {
+      const [slotData, bookingData] = await Promise.all([fetchAllSlots(), fetchBookings()]);
+      setSlots(slotData);
+      setBookings(bookingData);
+      setAuthError('');
+    } catch (error) {
+      setAuthError(error.message || couchConfigError);
     }
 
     setLoadingData(false);
   }, []);
 
   useEffect(() => {
-    if (!supabase) return undefined;
+    if (!isAdmin) return undefined;
 
-    let active = true;
+    const timer = setTimeout(() => {
+      loadAdminData();
+    }, 0);
 
-    async function bootstrap() {
-      const { data, error } = await supabase.auth.getSession();
-      if (!active) return;
+    return () => clearTimeout(timer);
+  }, [isAdmin, loadAdminData]);
 
-      if (error) {
-        setAuthError(error.message);
-      }
-
-      setSession(data.session ?? null);
-      setAuthChecked(true);
-
-      if (data.session) {
-        await loadAdminData();
-      }
-    }
-
-    bootstrap();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
-      if (!active) return;
-
-      setSession(currentSession);
-
-      if (currentSession) {
-        await loadAdminData();
-      } else {
-        setSlots([]);
-        setBookings([]);
-      }
-
-      setAuthChecked(true);
-    });
-
-    return () => {
-      active = false;
-      subscription.unsubscribe();
-    };
-  }, [loadAdminData]);
-
-  async function handleLogin(event) {
+  function handleLogin(event) {
     event.preventDefault();
 
-    if (!supabase) {
-      setAuthError(supabaseConfigError);
-      return;
-    }
-
-    setAuthError('');
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email: ADMIN_EMAIL,
-      password: password.trim(),
-    });
-
-    if (error) {
+    if (password.trim() !== ADMIN_PASSWORD) {
       setAuthError('Wrong password.');
       return;
     }
 
+    localStorage.setItem(ADMIN_FLAG, '1');
+    setIsAdmin(true);
     setPassword('');
+    setAuthError('');
   }
 
-  async function handleLogout() {
-    if (!supabase) return;
-
-    await supabase.auth.signOut();
-    setSession(null);
+  function handleLogout() {
+    localStorage.removeItem(ADMIN_FLAG);
+    setIsAdmin(false);
+    setSlots([]);
+    setBookings([]);
+    setActionMessage('');
   }
 
   async function handleCreateSlot(event) {
     event.preventDefault();
-
-    if (!supabase) {
-      setAuthError(supabaseConfigError);
-      return;
-    }
-
     setSavingSlot(true);
     setActionMessage('');
     setAuthError('');
 
-    const { error } = await supabase.from('time_slots').insert({
-      start_time: new Date(startTime).toISOString(),
-      end_time: new Date(endTime).toISOString(),
-      capacity,
-      booked_count: 0,
-      is_active: true,
-    });
-
-    if (error) {
-      setAuthError(error.message);
-      setSavingSlot(false);
-      return;
+    try {
+      await createSlot({
+        startTime,
+        endTime,
+        capacity,
+      });
+      setActionMessage('Slot created.');
+      setStartTime('');
+      setEndTime('');
+      setCapacity(1);
+      await loadAdminData();
+    } catch (error) {
+      setAuthError(error.message || 'Could not create slot.');
     }
 
-    setActionMessage('Slot created.');
-    setStartTime('');
-    setEndTime('');
-    setCapacity(1);
     setSavingSlot(false);
-    await loadAdminData();
   }
 
   async function handleDeactivateSlot(slotId) {
-    if (!supabase) {
-      setAuthError(supabaseConfigError);
-      return;
-    }
-
     setActionMessage('');
     setAuthError('');
 
-    const { error } = await supabase.from('time_slots').update({ is_active: false }).eq('id', slotId);
-
-    if (error) {
-      setAuthError(error.message);
-      return;
+    try {
+      await hideSlot(slotId);
+      setActionMessage('Slot hidden from booking page.');
+      await loadAdminData();
+    } catch (error) {
+      setAuthError(error.message || 'Could not hide slot.');
     }
-
-    setActionMessage('Slot hidden from booking page.');
-    await loadAdminData();
   }
 
-  if (!authChecked) {
-    return (
-      <section className="card">
-        <h2>Admin</h2>
-        <p>Checking access...</p>
-      </section>
-    );
-  }
-
-  if (!session) {
+  if (!isAdmin) {
     return (
       <section className="card">
         <h2>Admin login</h2>
@@ -287,7 +212,7 @@ function AdminPage() {
               </thead>
               <tbody>
                 {slots.map((slot) => (
-                  <tr key={slot.id}>
+                  <tr key={slot._id}>
                     <td>{`${formatDateTime(slot.start_time)} - ${formatDateTime(slot.end_time)}`}</td>
                     <td>{slot.booked_count}</td>
                     <td>{slot.capacity}</td>
@@ -297,7 +222,7 @@ function AdminPage() {
                         <button
                           type="button"
                           className="secondary"
-                          onClick={() => handleDeactivateSlot(slot.id)}
+                          onClick={() => handleDeactivateSlot(slot._id)}
                         >
                           Hide
                         </button>
@@ -323,18 +248,22 @@ function AdminPage() {
                 </tr>
               </thead>
               <tbody>
-                {bookings.map((booking) => (
-                  <tr key={booking.id}>
-                    <td>{booking.name}</td>
-                    <td>{booking.email}</td>
-                    <td>
-                      {booking.slot
-                        ? `${formatDateTime(booking.slot.start_time)} - ${formatDateTime(booking.slot.end_time)}`
-                        : 'Slot deleted'}
-                    </td>
-                    <td>{formatDateTime(booking.created_at)}</td>
-                  </tr>
-                ))}
+                {bookings.map((booking) => {
+                  const slot = slotMap.get(booking.slot_id);
+
+                  return (
+                    <tr key={booking._id}>
+                      <td>{booking.name}</td>
+                      <td>{booking.email}</td>
+                      <td>
+                        {slot
+                          ? `${formatDateTime(slot.start_time)} - ${formatDateTime(slot.end_time)}`
+                          : 'Slot missing'}
+                      </td>
+                      <td>{formatDateTime(booking.created_at)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

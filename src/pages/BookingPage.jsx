@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { supabase, supabaseConfigError } from '../lib/supabase';
+import { couchConfigError, createBooking, fetchActiveSlots } from '../lib/couchdb';
 
 function formatTimeRange(start, end) {
   const startDate = new Date(start);
@@ -24,32 +24,22 @@ function BookingPage() {
     () => slots.filter((slot) => slot.capacity - slot.booked_count > 0),
     [slots],
   );
+
   const effectiveSelectedSlotId = useMemo(() => {
     if (!availableSlots.length) return '';
 
-    const currentStillAvailable = availableSlots.some((slot) => slot.id === selectedSlotId);
-    return currentStillAvailable ? selectedSlotId : availableSlots[0].id;
+    const currentStillAvailable = availableSlots.some((slot) => slot._id === selectedSlotId);
+    return currentStillAvailable ? selectedSlotId : availableSlots[0]._id;
   }, [availableSlots, selectedSlotId]);
 
   async function loadSlots() {
-    if (!supabase) {
-      setError(supabaseConfigError);
-      setSlots([]);
-      return;
-    }
-
-    const { data, error: queryError } = await supabase
-      .from('time_slots')
-      .select('id,start_time,end_time,capacity,booked_count,is_active')
-      .eq('is_active', true)
-      .order('start_time', { ascending: true });
-
-    if (queryError) {
-      setError(queryError.message);
-      setSlots([]);
-    } else {
+    try {
+      const data = await fetchActiveSlots();
+      setSlots(data);
       setError('');
-      setSlots(data ?? []);
+    } catch (loadError) {
+      setSlots([]);
+      setError(loadError.message || couchConfigError);
     }
   }
 
@@ -57,32 +47,24 @@ function BookingPage() {
     let mounted = true;
 
     async function initialLoad() {
-      if (!supabase) {
-        setError(supabaseConfigError);
-        setSlots([]);
-        setFetching(false);
-        return;
-      }
-
-      const { data, error: queryError } = await supabase
-        .from('time_slots')
-        .select('id,start_time,end_time,capacity,booked_count,is_active')
-        .eq('is_active', true)
-        .order('start_time', { ascending: true });
-
-      if (!mounted) return;
-
-      if (queryError) {
-        setError(queryError.message);
-        setSlots([]);
-      } else {
+      try {
+        const data = await fetchActiveSlots();
+        if (!mounted) return;
+        setSlots(data);
         setError('');
-        setSlots(data ?? []);
+      } catch (loadError) {
+        if (!mounted) return;
+        setSlots([]);
+        setError(loadError.message || couchConfigError);
       }
-      setFetching(false);
+
+      if (mounted) {
+        setFetching(false);
+      }
     }
 
     initialLoad();
+
     return () => {
       mounted = false;
     };
@@ -90,32 +72,27 @@ function BookingPage() {
 
   async function handleBooking(event) {
     event.preventDefault();
-    if (!supabase) {
-      setError(supabaseConfigError);
-      return;
-    }
     setLoading(true);
     setMessage('');
     setError('');
 
-    const { error: insertError } = await supabase.from('bookings').insert({
-      slot_id: effectiveSelectedSlotId,
-      name: name.trim(),
-      email: email.trim().toLowerCase(),
-    });
+    try {
+      await createBooking({
+        slotId: effectiveSelectedSlotId,
+        name,
+        email,
+      });
 
-    if (insertError) {
-      setError(insertError.message);
-      setLoading(false);
-      return;
+      setMessage('Booked! We saved your slot.');
+      setName('');
+      setEmail('');
+      setFetching(true);
+      await loadSlots();
+    } catch (bookingError) {
+      setError(bookingError.message || 'Could not complete booking.');
     }
 
-    setMessage('Booked! We saved your slot.');
-    setName('');
-    setEmail('');
     setLoading(false);
-    setFetching(true);
-    await loadSlots();
     setFetching(false);
   }
 
@@ -139,10 +116,10 @@ function BookingPage() {
               const remaining = slot.capacity - slot.booked_count;
               return (
                 <button
-                  key={slot.id}
+                  key={slot._id}
                   type="button"
-                  className={`slot-chip ${effectiveSelectedSlotId === slot.id ? 'active' : ''}`}
-                  onClick={() => setSelectedSlotId(slot.id)}
+                  className={`slot-chip ${effectiveSelectedSlotId === slot._id ? 'active' : ''}`}
+                  onClick={() => setSelectedSlotId(slot._id)}
                 >
                   <span>{formatTimeRange(slot.start_time, slot.end_time)}</span>
                   <strong>{remaining} spot(s) left</strong>
